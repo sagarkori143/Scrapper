@@ -1,0 +1,262 @@
+name: Comprehensive Hourly Job Scraper
+
+on:
+  schedule:
+    # Run every hour at minute 0 (1:00, 2:00, 3:00, etc.)
+    - cron: '0 * * * *'
+  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      single_company_url:
+        description: 'Test single company URL (optional)'
+        required: false
+        type: string
+      force_scout:
+        description: 'Force re-scouting of all companies'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  comprehensive-scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240  # 4 hours timeout for thorough scraping
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        echo "📦 Installing Python dependencies..."
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Playwright browsers
+      run: |
+        echo "🎭 Installing Playwright browsers..."
+        playwright install --with-deps chromium
+        
+    - name: Create .env file
+      run: |
+        echo "🔐 Setting up environment variables..."
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" > .env
+        
+    - name: Create necessary directories
+      run: |
+        echo "📁 Creating directories..."
+        mkdir -p data
+        mkdir -p results
+        mkdir -p configs
+        
+    - name: Run comprehensive enhanced job scraper (Single Company Test)
+      if: ${{ github.event.inputs.single_company_url != '' }}
+      run: |
+        echo "🏢 Testing single company: ${{ github.event.inputs.single_company_url }}"
+        python scrapper.py scrape --url "${{ github.event.inputs.single_company_url }}" --enhanced
+        
+    - name: Run force scout mode (if requested)
+      if: ${{ github.event.inputs.force_scout == 'true' }}
+      run: |
+        echo "🕵️‍♂️ Force scouting all companies..."
+        python scrapper.py batch-scout
+        
+    - name: Run comprehensive enhanced job scraper (All Companies)
+      if: ${{ github.event.inputs.single_company_url == '' }}
+      run: |
+        echo "🚀 Starting comprehensive enhanced job scraping for all 115 companies..."
+        echo "⏰ Current time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "🔍 Mode: Enhanced extraction (job IDs, URLs, descriptions, requirements, etc.)"
+        echo "📊 Target: All companies in companies.json"
+        echo "================================"
+        python scrapper.py
+        
+    - name: Generate comprehensive report
+      run: |
+        echo "📝 Generating comprehensive scraping report..."
+        
+        # Create main report
+        echo "# Comprehensive Job Scraping Report" > scraping_report.md
+        echo "**Generated**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> scraping_report.md
+        echo "" >> scraping_report.md
+        
+        # Summary statistics
+        echo "## 📊 Summary" >> scraping_report.md
+        echo "- **Total Companies Processed**: $(ls data/*.json 2>/dev/null | wc -l)" >> scraping_report.md
+        echo "- **CSV Files Generated**: $(ls results/*.csv 2>/dev/null | wc -l)" >> scraping_report.md
+        echo "- **Total Job Records**: $(find data/ -name '*.json' -exec jq '.total_jobs // 0' {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}')" >> scraping_report.md
+        echo "- **Enhanced Extraction**: ✅ Enabled" >> scraping_report.md
+        echo "- **Extraction Features**: Job IDs, URLs, Descriptions, Requirements, Salary, Skills" >> scraping_report.md
+        echo "" >> scraping_report.md
+        
+        # Company breakdown
+        echo "## 🏢 Company Breakdown" >> scraping_report.md
+        if ls data/*.json >/dev/null 2>&1; then
+          for file in data/*.json; do
+            if [ -f "$file" ]; then
+              company=$(jq -r '.company_name // "Unknown"' "$file" 2>/dev/null)
+              jobs=$(jq -r '.total_jobs // 0' "$file" 2>/dev/null)
+              echo "- **$company**: $jobs jobs" >> scraping_report.md
+            fi
+          done
+        else
+          echo "- No company data files found" >> scraping_report.md
+        fi
+        echo "" >> scraping_report.md
+        
+        # File details
+        echo "## 📄 Generated Files" >> scraping_report.md
+        echo "### JSON Data Files (Enhanced):" >> scraping_report.md
+        if ls data/*.json >/dev/null 2>&1; then
+          ls -lah data/*.json | awk '{print "- `" $9 "` (" $5 ")"}' >> scraping_report.md
+        else
+          echo "- No JSON files generated" >> scraping_report.md
+        fi
+        echo "" >> scraping_report.md
+        
+        echo "### CSV Result Files:" >> scraping_report.md
+        if ls results/*.csv >/dev/null 2>&1; then
+          ls -lah results/*.csv | awk '{print "- `" $9 "` (" $5 ")"}' >> scraping_report.md
+        else
+          echo "- No CSV files generated" >> scraping_report.md
+        fi
+        echo "" >> scraping_report.md
+        
+        # Configuration status
+        echo "## ⚙️ Configuration Status" >> scraping_report.md
+        if [ -f "configurations.json" ]; then
+          echo "- **Configuration File**: ✅ Available" >> scraping_report.md
+          echo "- **Configured Companies**: $(jq 'keys | length' configurations.json 2>/dev/null || echo '0')" >> scraping_report.md
+        else
+          echo "- **Configuration File**: ❌ Missing" >> scraping_report.md
+        fi
+        
+        echo "📝 Report generated successfully!"
+        
+    - name: Upload comprehensive artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: comprehensive-scraping-data-${{ github.run_number }}
+        path: |
+          data/
+          results/
+          configurations.json
+          scraping_report.md
+        retention-days: 30
+        
+    - name: Commit and push all changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "📤 Committing and pushing changes..."
+        git config --local user.email "action@github.com"
+        git config --local user.name "Comprehensive Hourly Scraper"
+        
+        # Add all files
+        git add data/ results/ configurations.json scraping_report.md
+        
+        # Check if there are changes to commit
+        if git diff --staged --quiet; then
+          echo "ℹ️ No changes to commit"
+        else
+          # Create detailed commit message
+          companies_count=$(ls data/*.json 2>/dev/null | wc -l)
+          jobs_count=$(find data/ -name '*.json' -exec jq '.total_jobs // 0' {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+          
+          git commit -m "🤖 Comprehensive hourly job scraping - $(date '+%Y-%m-%d %H:%M:%S UTC')
+
+          📊 Hourly Scraping Results:
+          🏢 Companies processed: $companies_count
+          💼 Total jobs extracted: $jobs_count
+          🔍 Enhanced extraction: ✅ (IDs, URLs, descriptions, requirements, etc.)
+          📁 Files: JSON data + CSV exports + configurations
+          ⏰ Next run: $(date -d '+1 hour' '+%Y-%m-%d %H:00:00 UTC')
+          
+          🎯 Comprehensive data ready for Resume-RAG analysis!"
+          
+          git push
+          echo "✅ Changes committed and pushed successfully!"
+        fi
+        
+    - name: Display comprehensive results
+      run: |
+        echo ""
+        echo "🎉 COMPREHENSIVE HOURLY SCRAPING COMPLETE!"
+        echo "=========================================="
+        echo "⏰ Completed at: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "🏢 Companies processed: $(ls data/*.json 2>/dev/null | wc -l)"
+        echo "💼 Total jobs found: $(find data/ -name '*.json' -exec jq '.total_jobs // 0' {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}')"
+        echo "📄 JSON files: $(ls data/*.json 2>/dev/null | wc -l)"
+        echo "📊 CSV files: $(ls results/*.csv 2>/dev/null | wc -l)"
+        echo "🔍 Enhanced extraction: ✅ ENABLED"
+        echo "📈 Next run: $(date -d '+1 hour' '+%H:00 UTC')"
+        echo "=========================================="
+        echo "🎯 Data ready for Resume-RAG processing!"
+        echo ""
+        
+    - name: Create issue on failure
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const title = `🚨 Comprehensive Scraper Failed - ${new Date().toISOString().split('T')[0]}`;
+          const body = `## Comprehensive Job Scraper Failure Report
+          
+          **Failure Time**: ${new Date().toISOString()}
+          **Workflow**: Comprehensive Hourly Job Scraper
+          **Run ID**: ${context.runId}
+          **Scheduled Run**: Every hour
+          
+          ### 🔍 What Failed
+          The comprehensive hourly job scraping workflow has failed. This affects:
+          - Hourly job data updates
+          - Enhanced data extraction (IDs, URLs, descriptions, etc.)
+          - Automated data collection for all 115 companies
+          
+          ### 🚨 Impact
+          - ❌ No new job data collected this hour
+          - ❌ Resume-RAG data pipeline interrupted
+          - ❌ Enhanced job information unavailable
+          
+          ### 🔧 Action Required
+          1. **Check Logs**: [View Failed Run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          2. **Verify Setup**:
+             - API key validity (\`GOOGLE_API_KEY\`)
+             - Network connectivity
+             - Website structure changes
+          3. **Test Manual Run**: Try manual trigger to isolate issue
+          4. **Check Dependencies**: Verify requirements.txt and Playwright
+          
+          ### 📋 Quick Fixes
+          - Re-run manually: [Manual Trigger](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/comprehensive-scraper.yml)
+          - Check recent commits for breaking changes
+          - Verify Google Gemini API status
+          
+          ### 📁 Related Files
+          - [Main Scraper](./scrapper.py)
+          - [Workflow File](./.github/workflows/comprehensive-scraper.yml)
+          - [Companies List](./companies.json)
+          - [Configurations](./configurations.json)
+          
+          **Next scheduled run**: ${new Date(Date.now() + 60*60*1000).toISOString()}
+          `;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['bug', 'scraper-failure', 'automation', 'urgent']
+          });
