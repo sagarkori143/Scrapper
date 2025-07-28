@@ -1,19 +1,28 @@
 """
 Gemini AI module for the intelligent job scraper.
 Handles all interactions with Google's Gemini AI for website analysis.
-Includes robust fallback system for enhanced reliability.
+Includes robust fallback system and intelligent rate limiting for enhanced reliability.
 """
 
 import json
 import time
+import threading
 import google.generativeai as genai
 from config import (
     GEMINI_MODEL_PRIMARY, 
     GEMINI_MODEL_FALLBACK, 
     GEMINI_MODEL_EMERGENCY,
     MAX_RETRY_ATTEMPTS,
-    RETRY_DELAY_SECONDS
+    RETRY_DELAY_SECONDS,
+    GEMINI_REQUESTS_PER_MINUTE,
+    GEMINI_MIN_REQUEST_INTERVAL
 )
+
+# Global rate limiting variables
+_last_request_time = 0
+_request_lock = threading.Lock()
+_request_count = 0
+_minute_start_time = time.time()
 
 # Model configuration with fallback hierarchy
 MODEL_HIERARCHY = [
@@ -21,6 +30,44 @@ MODEL_HIERARCHY = [
     {"name": GEMINI_MODEL_FALLBACK, "description": "Fallback (Reliable)"},
     {"name": GEMINI_MODEL_EMERGENCY, "description": "Emergency (Stable)"}
 ]
+
+
+def wait_for_rate_limit():
+    """
+    Implements intelligent rate limiting to respect Gemini API limits.
+    Ensures we don't exceed the requests per minute quota.
+    """
+    global _last_request_time, _request_count, _minute_start_time
+    
+    with _request_lock:
+        current_time = time.time()
+        
+        # Reset counter if a new minute has started
+        if current_time - _minute_start_time >= 60:
+            _request_count = 0
+            _minute_start_time = current_time
+        
+        # Check if we've hit the per-minute limit
+        if _request_count >= GEMINI_REQUESTS_PER_MINUTE:
+            wait_time = 60 - (current_time - _minute_start_time)
+            if wait_time > 0:
+                print(f"⏳ Rate limit reached ({GEMINI_REQUESTS_PER_MINUTE} requests/min). Waiting {wait_time:.1f}s...")
+                time.sleep(wait_time)
+                # Reset after waiting
+                _request_count = 0
+                _minute_start_time = time.time()
+        
+        # Ensure minimum interval between requests
+        time_since_last_request = current_time - _last_request_time
+        if time_since_last_request < GEMINI_MIN_REQUEST_INTERVAL:
+            wait_time = GEMINI_MIN_REQUEST_INTERVAL - time_since_last_request
+            print(f"⏱️ Rate limiting: waiting {wait_time:.1f}s before next request...")
+            time.sleep(wait_time)
+        
+        # Update tracking variables
+        _last_request_time = time.time()
+        _request_count += 1
+        print(f"📊 API Request #{_request_count} this minute")
 
 
 def get_model_with_fallback(model_name: str):
@@ -36,10 +83,10 @@ def get_model_with_fallback(model_name: str):
 
 def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: str = "analysis") -> dict:
     """
-    Calls Gemini API with comprehensive fallback mechanism.
+    Calls Gemini API with comprehensive fallback mechanism and intelligent rate limiting.
     Tries multiple models and implements retry logic for enhanced reliability.
     """
-    print(f"🤖 Starting {operation_name} with fallback support...")
+    print(f"🤖 Starting {operation_name} with fallback support and rate limiting...")
     
     for model_config in MODEL_HIERARCHY:
         model_name = model_config["name"]
@@ -57,6 +104,9 @@ def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: st
         for attempt in range(MAX_RETRY_ATTEMPTS):
             try:
                 print(f"   📡 Attempt {attempt + 1}/{MAX_RETRY_ATTEMPTS} with {model_name}...")
+                
+                # Apply rate limiting before each API call
+                wait_for_rate_limit()
                 
                 response = model.generate_content([prompt, html_content])
                 
@@ -78,6 +128,12 @@ def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: st
                 continue
                 
             except Exception as e:
+                error_msg = str(e).lower()
+                # Check for rate limit specific errors
+                if "quota" in error_msg or "rate" in error_msg or "limit" in error_msg:
+                    print(f"   🚨 Rate limit detected! Waiting longer before retry...")
+                    time.sleep(60)  # Wait a full minute for rate limit errors
+                
                 print(f"   🔴 API error with {model_name} (attempt {attempt + 1}): {e}")
                 if attempt < MAX_RETRY_ATTEMPTS - 1:
                     print(f"   ⏳ Retrying in {RETRY_DELAY_SECONDS} seconds...")
@@ -92,14 +148,36 @@ def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: st
 
 def get_fallback_status() -> dict:
     """
-    Returns the current fallback configuration status.
+    Returns the current fallback configuration status including rate limiting.
     Useful for debugging and monitoring.
     """
     return {
         "model_hierarchy": MODEL_HIERARCHY,
         "max_retry_attempts": MAX_RETRY_ATTEMPTS,
         "retry_delay_seconds": RETRY_DELAY_SECONDS,
-        "total_fallback_options": len(MODEL_HIERARCHY)
+        "total_fallback_options": len(MODEL_HIERARCHY),
+        "rate_limiting": {
+            "requests_per_minute": GEMINI_REQUESTS_PER_MINUTE,
+            "min_request_interval": f"{GEMINI_MIN_REQUEST_INTERVAL:.1f}s",
+            "current_requests_this_minute": _request_count
+        }
+    }
+
+
+def get_rate_limit_status() -> dict:
+    """
+    Returns current rate limiting status for monitoring.
+    """
+    global _request_count, _minute_start_time
+    current_time = time.time()
+    time_in_current_minute = current_time - _minute_start_time
+    
+    return {
+        "requests_this_minute": _request_count,
+        "requests_remaining": max(0, GEMINI_REQUESTS_PER_MINUTE - _request_count),
+        "time_in_current_minute": f"{time_in_current_minute:.1f}s",
+        "time_until_reset": f"{max(0, 60 - time_in_current_minute):.1f}s",
+        "last_request": f"{time.time() - _last_request_time:.1f}s ago"
     }
 
 
