@@ -1,0 +1,86 @@
+name: Enhanced Hourly Job Scraper
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Run every hour at minute 0
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  scrape-jobs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300  # 5 hours timeout to account for rate limiting
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        echo "📦 Installing Python dependencies..."
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Playwright browsers
+      run: |
+        echo "🌐 Installing browser dependencies..."
+        playwright install --with-deps chromium
+        
+    - name: Create .env file
+      run: |
+        echo "🔐 Setting up environment variables..."
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" > .env
+        
+    - name: Create necessary directories
+      run: |
+        echo "📁 Creating directories..."
+        mkdir -p data
+        mkdir -p results
+        
+    - name: Run enhanced job scraper
+      run: |
+        echo "🚀 Starting enhanced hourly job scraping with intelligent rate limiting..."
+        echo "⏰ Current time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "🔍 Mode: Enhanced extraction (job IDs, URLs, descriptions, requirements, salary)"
+        echo "📊 Target: All companies with comprehensive data extraction"
+        echo "⚡ Rate limiting: Respecting Gemini API quotas for reliable operation"
+        echo "🕐 Expected duration: 2-4 hours depending on rate limits"
+        echo "================================"
+        python scrapper.py
+        
+    - name: Generate scraping report
+      run: |
+        echo "📝 Generating scraping report..."
+        echo "📊 Jobs scraped: $(find data/ -name '*.json' -exec wc -l {} + 2>/dev/null | tail -1 | awk '{print $1}' || echo '0')"
+        echo "📁 Data files created: $(find data/ -name '*.json' | wc -l)"
+        echo "💾 Total data size: $(du -sh data/ 2>/dev/null | cut -f1 || echo '0B')"
+        ls -la data/ || echo "No data directory found"
+        
+    - name: Upload job data artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: enhanced-job-data-${{ github.run_number }}
+        path: |
+          data/
+          results/
+        retention-days: 30
+        
+    - name: Commit and push changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "💾 Committing scraped data..."
+        git config --local user.email "action@github.com"
+        git config --local user.name "Enhanced Job Scraper"
+        git add data/ results/
+        if git diff --staged --quiet; then
+          echo "✅ No new data to commit"
+        else
+          git commit -m "Enhanced job scraping - $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          git push
+          echo "✅ Data committed and pushed successfully"
+        fi
