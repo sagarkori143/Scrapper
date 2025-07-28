@@ -23,6 +23,7 @@ _last_request_time = 0
 _request_lock = threading.Lock()
 _request_count = 0
 _minute_start_time = time.time()
+_model_rate_limit_flags = {}  # Track which models hit rate limits
 
 # Model configuration with fallback hierarchy
 MODEL_HIERARCHY = [
@@ -30,6 +31,32 @@ MODEL_HIERARCHY = [
     {"name": GEMINI_MODEL_FALLBACK, "description": "Fallback (Reliable)"},
     {"name": GEMINI_MODEL_EMERGENCY, "description": "Emergency (Stable)"}
 ]
+
+
+def mark_model_rate_limited(model_name: str):
+    """
+    Mark a model as having hit rate limits to avoid immediate retries.
+    """
+    global _model_rate_limit_flags
+    _model_rate_limit_flags[model_name] = time.time()
+    print(f"🚫 Model {model_name} marked as rate-limited at {time.strftime('%H:%M:%S')}")
+
+
+def is_model_rate_limited(model_name: str, cooldown_minutes: int = 5) -> bool:
+    """
+    Check if a model was recently rate-limited and should be skipped.
+    """
+    global _model_rate_limit_flags
+    if model_name not in _model_rate_limit_flags:
+        return False
+    
+    time_since_limit = time.time() - _model_rate_limit_flags[model_name]
+    if time_since_limit > (cooldown_minutes * 60):
+        # Cooldown period over, remove the flag
+        del _model_rate_limit_flags[model_name]
+        return False
+    
+    return True
 
 
 def wait_for_rate_limit():
@@ -84,14 +111,19 @@ def get_model_with_fallback(model_name: str):
 def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: str = "analysis") -> dict:
     """
     Calls Gemini API with comprehensive fallback mechanism and intelligent rate limiting.
-    Tries multiple models and implements retry logic for enhanced reliability.
+    Automatically switches models when rate limits are hit for faster recovery.
     """
-    print(f"🤖 Starting {operation_name} with fallback support and rate limiting...")
+    print(f"🤖 Starting {operation_name} with smart fallback and rate limit avoidance...")
     print(f"📊 HTML content size: {len(html_content):,} characters")
     
     for model_config in MODEL_HIERARCHY:
         model_name = model_config["name"]
         model_desc = model_config["description"]
+        
+        # Skip models that recently hit rate limits
+        if is_model_rate_limited(model_name):
+            print(f"⏭️ Skipping {model_name} (recently rate-limited, cooldown active)")
+            continue
         
         print(f"🔄 Trying {model_name} ({model_desc})...")
         
@@ -144,10 +176,12 @@ def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: st
                 
             except Exception as e:
                 error_msg = str(e).lower()
-                # Check for rate limit specific errors
-                if "quota" in error_msg or "rate" in error_msg or "limit" in error_msg:
-                    print(f"   🚨 Rate limit detected! Waiting longer before retry...")
-                    time.sleep(60)  # Wait a full minute for rate limit errors
+                # Check for rate limit/quota specific errors - immediately switch to next model
+                if any(keyword in error_msg for keyword in ["quota", "rate", "limit", "resource_exhausted", "429", "exceeded"]):
+                    print(f"   🚨 QUOTA/RATE LIMIT DETECTED for {model_name}!")
+                    print(f"   🔄 IMMEDIATELY switching to next model (no waiting)...")
+                    mark_model_rate_limited(model_name)  # Mark this model as rate-limited
+                    break  # Break out of retry loop and try next model immediately
                 
                 print(f"   🔴 API error with {model_name} (attempt {attempt + 1}): {e}")
                 if attempt < MAX_RETRY_ATTEMPTS - 1:
@@ -166,6 +200,17 @@ def get_fallback_status() -> dict:
     Returns the current fallback configuration status including rate limiting.
     Useful for debugging and monitoring.
     """
+    global _model_rate_limit_flags
+    
+    rate_limited_models = []
+    for model_name, timestamp in _model_rate_limit_flags.items():
+        time_since = time.time() - timestamp
+        rate_limited_models.append({
+            "model": model_name,
+            "rate_limited_at": time.strftime('%H:%M:%S', time.localtime(timestamp)),
+            "minutes_ago": f"{time_since/60:.1f}m"
+        })
+    
     return {
         "model_hierarchy": MODEL_HIERARCHY,
         "max_retry_attempts": MAX_RETRY_ATTEMPTS,
@@ -175,7 +220,9 @@ def get_fallback_status() -> dict:
             "requests_per_minute": GEMINI_REQUESTS_PER_MINUTE,
             "min_request_interval": f"{GEMINI_MIN_REQUEST_INTERVAL:.1f}s",
             "current_requests_this_minute": _request_count
-        }
+        },
+        "rate_limited_models": rate_limited_models,
+        "available_models": [m["name"] for m in MODEL_HIERARCHY if not is_model_rate_limited(m["name"])]
     }
 
 
