@@ -1,22 +1,113 @@
 """
 Gemini AI module for the intelligent job scraper.
 Handles all interactions with Google's Gemini AI for website analysis.
+Includes robust fallback system for enhanced reliability.
 """
 
 import json
+import time
 import google.generativeai as genai
-from config import GEMINI_MODEL
+from config import (
+    GEMINI_MODEL_PRIMARY, 
+    GEMINI_MODEL_FALLBACK, 
+    GEMINI_MODEL_EMERGENCY,
+    MAX_RETRY_ATTEMPTS,
+    RETRY_DELAY_SECONDS
+)
 
-# Initialize Gemini model
-model = genai.GenerativeModel(GEMINI_MODEL)
+# Model configuration with fallback hierarchy
+MODEL_HIERARCHY = [
+    {"name": GEMINI_MODEL_PRIMARY, "description": "Primary (Fast)"},
+    {"name": GEMINI_MODEL_FALLBACK, "description": "Fallback (Reliable)"},
+    {"name": GEMINI_MODEL_EMERGENCY, "description": "Emergency (Stable)"}
+]
+
+
+def get_model_with_fallback(model_name: str):
+    """
+    Initialize a Gemini model with error handling.
+    """
+    try:
+        return genai.GenerativeModel(model_name)
+    except Exception as e:
+        print(f"⚠️ Failed to initialize model {model_name}: {e}")
+        return None
+
+
+def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: str = "analysis") -> dict:
+    """
+    Calls Gemini API with comprehensive fallback mechanism.
+    Tries multiple models and implements retry logic for enhanced reliability.
+    """
+    print(f"🤖 Starting {operation_name} with fallback support...")
+    
+    for model_config in MODEL_HIERARCHY:
+        model_name = model_config["name"]
+        model_desc = model_config["description"]
+        
+        print(f"🔄 Trying {model_name} ({model_desc})...")
+        
+        # Initialize model
+        model = get_model_with_fallback(model_name)
+        if not model:
+            print(f"❌ Failed to initialize {model_name}, trying next model...")
+            continue
+        
+        # Attempt API call with retries
+        for attempt in range(MAX_RETRY_ATTEMPTS):
+            try:
+                print(f"   📡 Attempt {attempt + 1}/{MAX_RETRY_ATTEMPTS} with {model_name}...")
+                
+                response = model.generate_content([prompt, html_content])
+                
+                if not response or not response.text:
+                    raise ValueError("Empty response from Gemini API")
+                
+                # Clean and parse response
+                cleaned_response = response.text.strip().replace('```json', '').replace('```', '').strip()
+                parsed_response = json.loads(cleaned_response)
+                
+                print(f"✅ {operation_name.capitalize()} successful with {model_name}!")
+                return parsed_response
+                
+            except json.JSONDecodeError as e:
+                print(f"   🔴 JSON parsing error with {model_name} (attempt {attempt + 1}): {e}")
+                if attempt < MAX_RETRY_ATTEMPTS - 1:
+                    print(f"   ⏳ Retrying in {RETRY_DELAY_SECONDS} seconds...")
+                    time.sleep(RETRY_DELAY_SECONDS)
+                continue
+                
+            except Exception as e:
+                print(f"   🔴 API error with {model_name} (attempt {attempt + 1}): {e}")
+                if attempt < MAX_RETRY_ATTEMPTS - 1:
+                    print(f"   ⏳ Retrying in {RETRY_DELAY_SECONDS} seconds...")
+                    time.sleep(RETRY_DELAY_SECONDS)
+                continue
+        
+        print(f"❌ All attempts failed for {model_name}, trying next model...")
+    
+    print("🚨 All fallback models exhausted! Returning None.")
+    return None
+
+
+def get_fallback_status() -> dict:
+    """
+    Returns the current fallback configuration status.
+    Useful for debugging and monitoring.
+    """
+    return {
+        "model_hierarchy": MODEL_HIERARCHY,
+        "max_retry_attempts": MAX_RETRY_ATTEMPTS,
+        "retry_delay_seconds": RETRY_DELAY_SECONDS,
+        "total_fallback_options": len(MODEL_HIERARCHY)
+    }
 
 
 def get_selectors_from_gemini(html_content: str) -> dict:
     """
     Analyzes HTML with Gemini to extract CSS selectors for scraping.
+    Uses fallback system for enhanced reliability.
     """
-    print("🤖 Contacting Gemini to analyze website structure...")
-    
     prompt = """
     You are an expert web scraping assistant. Analyze the provided HTML of a company's job listings page.
     Your task is to identify the CSS selectors for the following elements:
@@ -49,23 +140,14 @@ def get_selectors_from_gemini(html_content: str) -> dict:
     }
     """
     
-    try:
-        response = model.generate_content([prompt, html_content])
-        cleaned_response = response.text.strip().replace('```json', '').replace('```', '').strip()
-        print("✅ Gemini analysis complete.")
-        return json.loads(cleaned_response)
-    except Exception as e:
-        # The original error 'e' from the API is more informative.
-        print(f"🔴 Error during Gemini API call or JSON parsing: {e}")
-        return None
+    return call_gemini_with_fallback(prompt, html_content, "job listing analysis")
 
 
 def get_job_detail_selectors_from_gemini(html_content: str) -> dict:
     """
     Analyzes HTML of a job detail page with Gemini to extract selectors for job description and additional details.
+    Uses fallback system for enhanced reliability.
     """
-    print("🤖 Analyzing job detail page structure with Gemini...")
-    
     prompt = """
     You are an expert web scraping assistant. Analyze the provided HTML of a company's individual job detail page.
     Your task is to identify the CSS selectors for the following elements on the job detail page:
@@ -99,11 +181,4 @@ def get_job_detail_selectors_from_gemini(html_content: str) -> dict:
     }
     """
     
-    try:
-        response = model.generate_content([prompt, html_content])
-        cleaned_response = response.text.strip().replace('```json', '').replace('```', '').strip()
-        print("✅ Job detail analysis complete.")
-        return json.loads(cleaned_response)
-    except Exception as e:
-        print(f"🔴 Error during job detail analysis: {e}")
-        return None
+    return call_gemini_with_fallback(prompt, html_content, "job detail analysis")

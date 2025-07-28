@@ -129,10 +129,11 @@ def scout_mode(url: str, company_name: str = None):
 
 def scrape_mode(url: str, company_name: str = None, selectors: dict = None, extract_full_details: bool = True) -> list:
     """
-    Loads selectors from config file and performs a fast, multi-page scrape.
-    Returns list of scraped jobs with enhanced information.
+    Enhanced scraping with comprehensive job data extraction.
+    Always extracts job IDs, URLs, descriptions, requirements, salary info, and more.
     """
-    print(f"⚡ Running in Enhanced Scrape Mode for: {url}")
+    print(f"⚡ Running Enhanced Scrape Mode for: {url}")
+    print("🔍 Enhanced extraction: Job IDs, URLs, descriptions, requirements, salary, etc.")
     
     # Use provided selectors or load from configuration
     if selectors:

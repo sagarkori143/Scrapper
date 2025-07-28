@@ -48,12 +48,13 @@ def batch_scout_mode(companies_file: str = COMPANIES_FILE):
     print(f"📁 Configurations saved in: {CONFIGURATIONS_FILE}")
 
 
-def batch_scrape_mode(companies_file: str = COMPANIES_FILE, enhanced: bool = True):
+def batch_scrape_mode(companies_file: str = COMPANIES_FILE):
     """
-    Scrape mode for all companies in the companies file with enhanced extraction.
+    Enhanced scrape mode for all companies in the companies file.
+    Always uses enhanced extraction with comprehensive job data.
     """
-    extraction_type = "Enhanced" if enhanced else "Basic"
-    print(f"🚀 Running Batch {extraction_type} Scrape Mode for all companies...")
+    print("🚀 Running Enhanced Batch Scrape Mode for all companies...")
+    print("� Enhanced extraction: Job IDs, URLs, descriptions, requirements, salary, etc.")
     companies = load_companies(companies_file)
     
     if not companies:
@@ -76,7 +77,7 @@ def batch_scrape_mode(companies_file: str = COMPANIES_FILE, enhanced: bool = Tru
         print(f"\n{'='*60}")
         print(f"🏢 Processing: {company_name}")
         print(f"🔗 URL: {career_url}")
-        print(f"📊 Extraction: {extraction_type}")
+        print(f"� Enhanced Extraction: Job IDs, URLs, descriptions, requirements, etc.")
         print(f"{'='*60}")
         
         # Get configuration
@@ -86,7 +87,7 @@ def batch_scrape_mode(companies_file: str = COMPANIES_FILE, enhanced: bool = Tru
             failed_scrapes += 1
             continue
         
-        jobs = scrape_mode(career_url, company_name, selectors, extract_full_details=enhanced)
+        jobs = scrape_mode(career_url, company_name, selectors, extract_full_details=True)
         if jobs:
             # Save both CSV and JSON formats
             save_job_data(company_name, jobs, career_url)
@@ -97,20 +98,22 @@ def batch_scrape_mode(companies_file: str = COMPANIES_FILE, enhanced: bool = Tru
             failed_scrapes += 1
             print(f"🔴 No jobs found for {company_name}")
     
-    print(f"\n📊 Batch {extraction_type} Scrape Summary:")
+    print(f"\n📊 Enhanced Batch Scrape Summary:")
     print(f"✅ Successful companies: {successful_scrapes}")
     print(f"🔴 Failed companies: {failed_scrapes}")
     print(f"💼 Total jobs found: {total_jobs}")
+    print(f"🔍 Enhanced data: Job IDs, URLs, descriptions, requirements, salary, etc.")
     print(f"📁 CSV Results saved in: {RESULTS_DIR}")
     print(f"📄 JSON Data saved in: {DATA_DIR}")
 
 
-def intelligent_scrape_all(enhanced: bool = True):
+def intelligent_scrape_all():
     """
     Main intelligent workflow: Scout companies without configs, then scrape all with enhanced extraction.
+    Always uses enhanced mode for comprehensive job data extraction.
     """
-    extraction_type = "Enhanced" if enhanced else "Basic"
-    print(f"🚀 Starting Intelligent {extraction_type} Job Scraping Workflow")
+    print(f"🚀 Starting Intelligent Enhanced Job Scraping Workflow")
+    print("🔍 Enhanced extraction: Job IDs, URLs, descriptions, requirements, salary, etc.")
     print("=" * 60)
     
     # Load companies
@@ -185,7 +188,7 @@ def intelligent_scrape_all(enhanced: bool = True):
         print(f"   🔴 Failed: {scout_failed}")
     
     # Phase 3: Scrape all companies with enhanced extraction
-    print(f"\n⚡ Phase 3: Scraping jobs from all companies ({extraction_type} mode)...")
+    print(f"\n⚡ Phase 3: Scraping jobs from all companies (Enhanced mode)...")
     
     for company in companies:
         company_name = company.get('name', 'Unknown')
@@ -206,10 +209,10 @@ def intelligent_scrape_all(enhanced: bool = True):
         print(f"\n{'='*50}")
         print(f"⚡ Scraping: {company_name}")
         print(f"🔗 URL: {career_url}")
-        print(f"📊 Mode: {extraction_type}")
+        print(f"� Enhanced Extraction: Job IDs, URLs, descriptions, requirements, etc.")
         print(f"{'='*50}")
         
-        jobs = scrape_mode(career_url, company_name, selectors, extract_full_details=enhanced)
+        jobs = scrape_mode(career_url, company_name, selectors, extract_full_details=True)
         if jobs:
             # Save both CSV and JSON formats
             save_job_data(company_name, jobs, career_url)
@@ -222,7 +225,7 @@ def intelligent_scrape_all(enhanced: bool = True):
     
     # Final Summary
     print(f"\n{'='*60}")
-    print(f"🎉 FINAL {extraction_type.upper()} EXTRACTION SUMMARY")
+    print(f"🎉 FINAL ENHANCED EXTRACTION SUMMARY")
     print(f"{'='*60}")
     print(f"📊 Total companies processed: {total_companies}")
     print(f"✅ Successful scrapes: {successful_scrapes}")
@@ -231,6 +234,5 @@ def intelligent_scrape_all(enhanced: bool = True):
     print(f"📁 CSV Results saved in: {RESULTS_DIR}")
     print(f"📄 JSON Data saved in: {DATA_DIR}")
     print(f"⚙️  Configurations saved in: {CONFIGURATIONS_FILE}")
-    if enhanced:
-        print(f"🔍 Enhanced data includes: Job IDs, URLs, Descriptions, Requirements, etc.")
+    print(f"🔍 Enhanced data includes: Job IDs, URLs, Descriptions, Requirements, Salary, Skills, etc.")
     print(f"{'='*60}")
