@@ -61,7 +61,7 @@ jobs:
         ls -la data/ || echo "No data directory found"
         
     - name: Upload job data artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: enhanced-job-data-${{ github.run_number }}
         path: |
