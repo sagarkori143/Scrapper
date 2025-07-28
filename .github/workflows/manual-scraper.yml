@@ -1,0 +1,129 @@
+name: Manual Job Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      company_url:
+        description: 'Single company URL to scrape (optional)'
+        required: false
+        type: string
+      enhanced_mode:
+        description: 'Enable enhanced extraction'
+        required: false
+        default: true
+        type: boolean
+      scrape_mode:
+        description: 'Scraping mode'
+        required: true
+        default: 'intelligent'
+        type: choice
+        options:
+          - 'intelligent'
+          - 'batch-scrape'
+          - 'batch-scout'
+          - 'single-company'
+
+jobs:
+  manual-scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 hours timeout
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Playwright browsers
+      run: |
+        playwright install --with-deps chromium
+        
+    - name: Create .env file
+      run: |
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" > .env
+        
+    - name: Create necessary directories
+      run: |
+        mkdir -p data
+        mkdir -p results
+        mkdir -p configs
+        
+    - name: Run job scraper (Intelligent Mode)
+      if: ${{ github.event.inputs.scrape_mode == 'intelligent' }}
+      run: |
+        echo "🤖 Running intelligent enhanced workflow..."
+        python scrapper.py
+        
+    - name: Run job scraper (Batch Scrape)
+      if: ${{ github.event.inputs.scrape_mode == 'batch-scrape' }}
+      run: |
+        echo "📦 Running batch scrape mode..."
+        if [ "${{ github.event.inputs.enhanced_mode }}" == "true" ]; then
+          python scrapper.py batch-scrape --enhanced
+        else
+          python scrapper.py batch-scrape
+        fi
+        
+    - name: Run job scraper (Batch Scout)
+      if: ${{ github.event.inputs.scrape_mode == 'batch-scout' }}
+      run: |
+        echo "🕵️‍♂️ Running batch scout mode..."
+        python scrapper.py batch-scout
+        
+    - name: Run job scraper (Single Company)
+      if: ${{ github.event.inputs.scrape_mode == 'single-company' && github.event.inputs.company_url != '' }}
+      run: |
+        echo "🏢 Scraping single company: ${{ github.event.inputs.company_url }}"
+        if [ "${{ github.event.inputs.enhanced_mode }}" == "true" ]; then
+          python scrapper.py scrape --url "${{ github.event.inputs.company_url }}" --enhanced
+        else
+          python scrapper.py scrape --url "${{ github.event.inputs.company_url }}"
+        fi
+        
+    - name: Generate manual run report
+      run: |
+        echo "# Manual Job Scraping Report" > manual_report.md
+        echo "" >> manual_report.md
+        echo "## Run Details" >> manual_report.md
+        echo "- **Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> manual_report.md
+        echo "- **Mode**: ${{ github.event.inputs.scrape_mode }}" >> manual_report.md
+        echo "- **Enhanced**: ${{ github.event.inputs.enhanced_mode }}" >> manual_report.md
+        if [ -n "${{ github.event.inputs.company_url }}" ]; then
+          echo "- **Target URL**: ${{ github.event.inputs.company_url }}" >> manual_report.md
+        fi
+        echo "- **Triggered by**: ${{ github.actor }}" >> manual_report.md
+        echo "" >> manual_report.md
+        echo "## Results" >> manual_report.md
+        echo "- **JSON Files**: $(ls data/*.json 2>/dev/null | wc -l)" >> manual_report.md
+        echo "- **CSV Files**: $(ls results/*.csv 2>/dev/null | wc -l)" >> manual_report.md
+        echo "- **Total Jobs**: $(find data/ -name '*.json' -exec jq '.total_jobs // 0' {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}')" >> manual_report.md
+        
+    - name: Upload manual run data
+      uses: actions/upload-artifact@v3
+      with:
+        name: manual-scrape-${{ github.run_number }}
+        path: |
+          data/
+          results/
+          configurations.json
+          manual_report.md
+        retention-days: 14
+        
+    - name: Display results summary
+      run: |
+        echo "📊 Manual Scraping Complete!"
+        echo "================================"
+        echo "Mode: ${{ github.event.inputs.scrape_mode }}"
+        echo "Enhanced: ${{ github.event.inputs.enhanced_mode }}"
+        echo "JSON files: $(ls data/*.json 2>/dev/null | wc -l)"
+        echo "CSV files: $(ls results/*.csv 2>/dev/null | wc -l)"
+        echo "Total jobs: $(find data/ -name '*.json' -exec jq '.total_jobs // 0' {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}')"
+        echo "================================"

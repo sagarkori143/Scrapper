@@ -1,0 +1,64 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+.env/
+
+# VS Code
+.vscode/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Test cache
+.cache/
+.tox/
+.pytest_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# MyPy, Pyre, Pylint, etc.
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+
+# dotenv environment files
+.env
+.env.*
+
+# System/macOS files
+.DS_Store
+Thumbs.db
+
+# GitHub Actions artifacts
+*.log
+*.log.*
+
+# Python compiled extensions
+*.so
+*.pyd
+
+# If you're using Poetry
+poetry.lock
+
+# Ignore SQLite DB (if used temporarily)
+*.sqlite3

@@ -1,0 +1,20 @@
+{
+  "company_name": "Example Company",
+  "career_url": "https://example.com/careers",
+  "total_jobs": 2,
+  "scraped_at": "2025-07-28T14:30:22.123456",
+  "jobs": [
+    {
+      "title": "Software Engineer",
+      "location": "San Francisco, CA",
+      "company": "Example Company",
+      "scraped_date": "2025-07-28"
+    },
+    {
+      "title": "Product Manager",
+      "location": "New York, NY", 
+      "company": "Example Company",
+      "scraped_date": "2025-07-28"
+    }
+  ]
+}
