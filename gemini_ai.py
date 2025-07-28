@@ -87,6 +87,7 @@ def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: st
     Tries multiple models and implements retry logic for enhanced reliability.
     """
     print(f"🤖 Starting {operation_name} with fallback support and rate limiting...")
+    print(f"📊 HTML content size: {len(html_content):,} characters")
     
     for model_config in MODEL_HIERARCHY:
         model_name = model_config["name"]
@@ -113,15 +114,29 @@ def call_gemini_with_fallback(prompt: str, html_content: str, operation_name: st
                 if not response or not response.text:
                     raise ValueError("Empty response from Gemini API")
                 
+                # Log raw response for debugging
+                raw_response = response.text.strip()
+                print(f"   📝 Raw response length: {len(raw_response)} characters")
+                print(f"   📄 Raw response preview: {raw_response[:200]}...")
+                
                 # Clean and parse response
-                cleaned_response = response.text.strip().replace('```json', '').replace('```', '').strip()
+                cleaned_response = raw_response.replace('```json', '').replace('```', '').strip()
                 parsed_response = json.loads(cleaned_response)
+                
+                # Validate that we got actual selectors (not all null)
+                non_null_selectors = {k: v for k, v in parsed_response.items() if v is not None}
+                if len(non_null_selectors) == 0:
+                    print(f"   ⚠️ Warning: All selectors are null - Gemini may not have found valid elements")
+                    print(f"   🔍 Parsed response: {parsed_response}")
+                else:
+                    print(f"   ✅ Found {len(non_null_selectors)} non-null selectors")
                 
                 print(f"✅ {operation_name.capitalize()} successful with {model_name}!")
                 return parsed_response
                 
             except json.JSONDecodeError as e:
                 print(f"   🔴 JSON parsing error with {model_name} (attempt {attempt + 1}): {e}")
+                print(f"   📄 Failed to parse: {response.text[:500] if response and response.text else 'No response'}...")
                 if attempt < MAX_RETRY_ATTEMPTS - 1:
                     print(f"   ⏳ Retrying in {RETRY_DELAY_SECONDS} seconds...")
                     time.sleep(RETRY_DELAY_SECONDS)
@@ -181,41 +196,82 @@ def get_rate_limit_status() -> dict:
     }
 
 
-def get_selectors_from_gemini(html_content: str) -> dict:
+def get_selectors_from_gemini(html_content: str, url: str = "") -> dict:
     """
     Analyzes HTML with Gemini to extract CSS selectors for scraping.
-    Uses fallback system for enhanced reliability.
+    Uses enhanced prompts and fallback system for improved reliability.
     """
-    prompt = """
-    You are an expert web scraping assistant. Analyze the provided HTML of a company's job listings page.
-    Your task is to identify the CSS selectors for the following elements:
+    # Create site-specific enhanced prompt
+    site_hints = ""
+    url_lower = url.lower()
+    
+    if 'google' in url_lower:
+        site_hints = """
+        GOOGLE CAREERS SPECIFIC HINTS:
+        - Jobs are often in elements with [data-job-id] attributes
+        - Look for [role="listitem"] containers or .search-result elements
+        - Titles are usually in h3 tags or elements with 'job-title' classes
+        - Locations often have 'location' or 'job-location' classes
+        - Links typically have href patterns like '/jobs/results/...'
+        """
+    elif 'microsoft' in url_lower:
+        site_hints = """
+        MICROSOFT CAREERS SPECIFIC HINTS:
+        - Jobs may be in .ms-List-cell containers
+        - Look for [data-automation-id] attributes especially "jobTitle"
+        - Titles often have 'job-title' classes or are in anchor tags
+        - Location info may have [data-automation-id="jobLocation"]
+        """
+    elif any(company in url_lower for company in ['meta', 'facebook']):
+        site_hints = """
+        META/FACEBOOK CAREERS SPECIFIC HINTS:
+        - Jobs often in article or div containers with job-related data attributes
+        - Look for semantic HTML like <article> or [role="listitem"]
+        - Titles typically in h3 or strong tags within job containers
+        """
+    
+    prompt = f"""
+    You are an expert web scraping assistant analyzing a company's job listings page. 
 
-    1. A container for each individual job posting (key: "job_item").
-    2. The job title within that job container (key: "title").
-    3. The job location within that job container (key: "location").
-    4. A clickable link/button within each job item that leads to the full job details page (key: "job_link").
-    5. The job ID or unique identifier, often found in href attributes, data attributes, or as text (key: "job_id").
-    6. A brief job description or summary text, if visible on the listing page (key: "description").
-    7. The link or button to click to go to the NEXT page of results (key: "pagination_next").
+    IMPORTANT: You must analyze the HTML structure carefully and provide SPECIFIC CSS selectors that actually exist in the HTML.
 
-    IMPORTANT NOTES:
-    - For "job_link": This should be a selector for a clickable element (usually <a> tag) that opens the full job details.
-    - For "job_id": Look for unique identifiers in href URLs (like /job/12345), data-id attributes, or ID text.
-    - For "description": Look for preview text, summary, or snippet content visible on the listing page.
-    - If any element is not found or doesn't exist, set its value to null.
+    {site_hints}
 
-    You MUST return your response as a single, raw JSON object, and nothing else.
-    Do not include markdown formatting like ```json or any explanations.
-    Your response should look EXACTLY like this example:
-    {
-      "job_item": "div.job-card",
-      "title": "h2.job-title",
-      "location": "span.location",
-      "job_link": "a.job-link",
-      "job_id": "a.job-link",
-      "description": "div.job-summary",
-      "pagination_next": "a.next-page"
-    }
+    Your task is to identify CSS selectors for these elements:
+
+    1. **job_item**: Container for each individual job posting (div, article, li, section, etc.)
+    2. **title**: Job title text within each job container  
+    3. **location**: Job location text within each job container
+    4. **job_link**: Clickable link/button that opens full job details (must be <a> tag)
+    5. **job_id**: Unique identifier (in href URLs, data attributes, or visible text)
+    6. **description**: Brief job summary/description text visible on listing page
+    7. **pagination_next**: Next page button/link for pagination
+
+    ANALYSIS STRATEGY:
+    - First identify the repeating job listing pattern in the HTML
+    - Look for semantic elements: <article>, <section>, [role="listitem"], or divs with job-related classes
+    - Common patterns: classes/IDs containing "job", "position", "career", "listing", "search-result"
+    - For data attributes, look for: data-job-id, data-automation-id, data-testid
+    - For job_link: Find <a> tags within job containers that lead to detail pages
+    - For job_id: Extract from href patterns like "/job/12345" or data-id attributes
+    - If you cannot find a reliable selector that exists in the HTML, use null
+
+    CRITICAL REQUIREMENTS:
+    - Only return selectors that you can verify exist in the provided HTML
+    - Be as specific as possible to avoid false matches
+    - If you're unsure about a selector, use null rather than guessing
+    - Focus on the most common/reliable pattern you can identify
+
+    Return ONLY a raw JSON object with no explanations:
+    {{
+      "job_item": "css.selector.for.job.container",
+      "title": "css.selector.for.title", 
+      "location": "css.selector.for.location",
+      "job_link": "css.selector.for.clickable.link",
+      "job_id": "css.selector.for.identifier", 
+      "description": "css.selector.for.description",
+      "pagination_next": "css.selector.for.next.page"
+    }}
     """
     
     return call_gemini_with_fallback(prompt, html_content, "job listing analysis")

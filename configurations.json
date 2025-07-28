@@ -2,27 +2,14 @@
   "google": {
     "company_name": "Google",
     "selectors": {
-      "job_item": null,
-      "title": null,
+      "job_item": ".ObfsIf-eEDwDf.ObfsIf-eEDwDf-PvhD9-purZT-uQSCkd.ObfsIf-eEDwDf-pSzOP-qWD73c.ObfsIf-eEDwDf-hJDwNd-c5RTEf.rgIUlf",
+      "title": ".x1G5y",
       "location": null,
-      "job_link": null,
+      "job_link": ".Si6A0c",
       "job_id": null,
-      "description": null,
-      "pagination_next": null
+      "description": ".Hlwyne",
+      "pagination_next": ".cKACOc.VfPpkd-Bz112c-LgbsSe.yHy1rc.eT1oJ.mN1ivc:nth-child(2)"
     },
-    "last_updated": "2025-07-28T20:14:49.795611"
-  },
-  "microsoft": {
-    "company_name": "Microsoft",
-    "selectors": {
-      "job_item": null,
-      "title": null,
-      "location": null,
-      "job_link": null,
-      "job_id": null,
-      "description": null,
-      "pagination_next": null
-    },
-    "last_updated": "2025-07-28T20:15:03.099823"
+    "last_updated": "2025-07-28T20:39:04.203043"
   }
 }
